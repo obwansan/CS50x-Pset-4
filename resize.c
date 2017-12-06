@@ -1,41 +1,38 @@
-/**
- * resize.c
- *
- * Copies a BMP piece by piece, and resizes it.
- */
-       
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "bmp.h"
+
+/*
+* Implement a program that resizes BMPs.
+*/
 
 int main(int argc, char* argv[])
 {
     // ensure proper usage
     if (argc != 4)
     {
-        printf("Usage: ./resize factor infile outfile\n");
+        printf("Usage: resize n infile outfile\n");
         return 1;
     }
 
-    // remember filenames and resize factor
-    int factor = atoi(argv[1]);
+    // remember filenames
+    int resize = atoi(argv[1]);
+    if(resize < 1 || resize > 100)
+    {
+        printf("Resize must be between 1 and 100\n");
+        return 2;
+    }
+    
     char* infile = argv[2];
     char* outfile = argv[3];
-
-    // check factor
-    if (factor < 1 || factor > 100)
-    {
-        printf("Factor must be in the range [1-100]\n");
-        return 1;
-    }
 
     // open input file 
     FILE* inptr = fopen(infile, "r");
     if (inptr == NULL)
     {
         printf("Could not open %s.\n", infile);
-        return 2;
+        return 3;
     }
 
     // open output file
@@ -44,22 +41,16 @@ int main(int argc, char* argv[])
     {
         fclose(inptr);
         fprintf(stderr, "Could not create %s.\n", outfile);
-        return 3;
+        return 4;
     }
 
     // read infile's BITMAPFILEHEADER
     BITMAPFILEHEADER bf;
-    BITMAPFILEHEADER bf_new;
     fread(&bf, sizeof(BITMAPFILEHEADER), 1, inptr);
-    
-    bf_new = bf;
 
     // read infile's BITMAPINFOHEADER
     BITMAPINFOHEADER bi;
-    BITMAPINFOHEADER bi_new;
     fread(&bi, sizeof(BITMAPINFOHEADER), 1, inptr);
-    
-    bi_new = bi;
 
     // ensure infile is (likely) a 24-bit uncompressed BMP 4.0
     if (bf.bfType != 0x4d42 || bf.bfOffBits != 54 || bi.biSize != 40 || 
@@ -70,68 +61,79 @@ int main(int argc, char* argv[])
         fprintf(stderr, "Unsupported file format.\n");
         return 4;
     }
-
-    // set new width and height dimensions
-    bi_new.biWidth = bi.biWidth * factor;
-    bi_new.biHeight = bi.biHeight * factor;
-
+    
+    // store original dimensions
+    int originalWidth = abs(bi.biWidth);
+    int originalHeight = abs(bi.biHeight);
+    //int originalSizeImage = bi.biSizeImage;
+    //int originalSize = bf.bfSize;
+      
+    // change dimensions in BITMAPINFOHEADER
+    bi.biWidth *= resize;
+    bi.biHeight *= resize;
+    
     // determine padding for scanlines
     int padding =  (4 - (bi.biWidth * sizeof(RGBTRIPLE)) % 4) % 4;
-    int new_padding =  (4 - (bi_new.biWidth * sizeof(RGBTRIPLE)) % 4) % 4;
-
-    // set new file size
-    bf_new.bfSize = 54 + (bi_new.biWidth * sizeof(RGBTRIPLE) + new_padding) * abs(bi_new.biHeight);
-    bi_new.biSizeImage = bf_new.bfSize - 54;
+    int originalPadding =  (4 - (originalWidth * sizeof(RGBTRIPLE)) % 4) % 4;
     
-
+    bi.biSizeImage = (abs(bi.biWidth) * 3 + padding) * abs(bi.biHeight);
+    
+    // change dimensions in BITMAPFILEHEADER
+    // NOTE: bf.bfOffBits is equivalent to sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) here
+    bf.bfSize = bf.bfOffBits + bi.biSizeImage;
+    
+    //printf("Width: %d, %d\n", originalWidth, bi.biWidth);
+    //printf("Height: %d, %d\n", originalHeight, bi.biHeight);
+    //printf("Size Image: %d, %d\n", originalSizeImage, bi.biSizeImage);
+    //printf("Size: %d, %d\n", originalSize, bf.bfSize);
+    
     // write outfile's BITMAPFILEHEADER
-    fwrite(&bf_new, sizeof(BITMAPFILEHEADER), 1, outptr);
+    fwrite(&bf, sizeof(BITMAPFILEHEADER), 1, outptr);
 
     // write outfile's BITMAPINFOHEADER
-    fwrite(&bi_new, sizeof(BITMAPINFOHEADER), 1, outptr);
-    
+    fwrite(&bi, sizeof(BITMAPINFOHEADER), 1, outptr);
+
     // iterate over infile's scanlines
-    for (int i = 0, biHeight = abs(bi.biHeight); i < biHeight; i++)
+    for (int i = 0; i < originalHeight; i++)
     {
-        // each row will be printed out factor times
-        int rowcounter = 0;
-        
-        while (rowcounter < factor)
+        // after writing all a scanline's RGB triples (pixels) 'resize' number of times (see below), 
+        // return to start of scanline (using fseek) 'resize' number of times (before writing pixels again)
+        for (int l = 0; l < resize; l++)
         {
+            // Go to start of scanline in inptr
+            // [It's i MULTIPLIED by the image width and padding. So on the first scanline i will be 0 and fseek 
+            // will just skip over the headers. On the second scanline fseek will offset from start of the line
+            // the whole way to the end, i.e. to the start of the next line, ready to read the pixels. Still not sure 
+            // how the i incrreasing to 2, 3 etc will work]
+            // [NOTE: bf.bfOffBits is equivalent to (sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)) here]
+            fseek(inptr, bf.bfOffBits + i * (originalPadding + (originalWidth * 3)), SEEK_SET);
+            // printf("%d, %d, %d . %d\n", i, padding, originalWidth, i * (originalPadding + (originalWidth * 3)));
+            
             // iterate over pixels in scanline
-            for (int j = 0; j < bi.biWidth; j++)
+            for (int j = 0; j < originalWidth; j++)
             {
                 // temporary storage
                 RGBTRIPLE triple;
-                
-                // each pixel will be printed out factor times
-                int pixelcounter = 0;
 
                 // read RGB triple from infile
                 fread(&triple, sizeof(RGBTRIPLE), 1, inptr);
-            
-                // write RGB triple to outfile
-                while (pixelcounter < factor)
+
+                // write RGB triple to outfile 'resize' number of times
+                for (int k = 0; k < resize; k++)
                 {
                     fwrite(&triple, sizeof(RGBTRIPLE), 1, outptr);
-                    pixelcounter++;
                 }
             }
-            // add new padding
-            for (int k = 0; k < new_padding; k++)
+            // skip over padding, if any
+            // QUESTION: shouldn't it be orginalPadding for the infile, not padding? Don't understand!
+            fseek(inptr, padding, SEEK_CUR);
+
+            // then add it back (to demonstrate how)
+            for (int k = 0; k < padding; k++)
                 fputc(0x00, outptr);
             
-            // seek back to the beginning of row in input file, but not after iteration of printing
-            if (rowcounter < (factor - 1))
-                fseek(inptr, -(bi.biWidth * sizeof(RGBTRIPLE)), SEEK_CUR);
-            
-            rowcounter++;
         }
-        
-        // skip over padding, if any
-        fseek(inptr, padding, SEEK_CUR);
     }
-    
     // close infile
     fclose(inptr);
 
