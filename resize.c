@@ -1,10 +1,7 @@
 /**
  * resize.c
  *
- * Computer Science 50
- * Problem Set 4
- *
- * Copies a BMP piece by piece, but also resizes it, just because.
+ * Copies a BMP piece by piece, and resizes it.
  */
        
 #include <stdio.h>
