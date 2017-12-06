@@ -1,5 +1,5 @@
 /**
- * Copies a BMP piece by piece, just because.
+ * implement a program that reveals a hidden message in a BMP.
  */
        
 #include <stdio.h>
